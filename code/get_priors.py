@@ -5,7 +5,7 @@
 	1 the distance from the event to the center of query LV, e.g. capitol.
     2 the prior similarity of other LVs with the given article to query LV (how many articles are both on the FR and DE pages, normalized by querying language)
     3 the prior relevance of the type of event to query LV  (how many "sport events" are on DE Wiki, normalized)
-    4 event related entities popularity in query language (e.g. length of entity page in query language) or number of mentions of entity on query language Wiki.)
+    4 (this is not for here. Wikipedia.) event related entities popularity in query language (e.g. length of entity page in query language) or number of mentions of entity on query language Wiki.)
 
 1: Stabile: query LV center
 2: Fully stabile: dict of counters, normalized(!) { de: { fr: 29, en: 12 }, fr: { de: 30, en: 89, da: 3 } }
@@ -13,13 +13,14 @@
 4: Online.
 
 """
-
+import json
 import pandas as pd
 import requests
+import time
 
 from collections import defaultdict, Counter
 
-languages = sorted(open("resources/wikipedia_LVs.txt").readlines()) #["de", "fr", "da", "sv"] 
+languages = sorted(open("resources/wikipedia_LVs.txt").readlines()) #["da", "sv"] #"de", "fr", "da", "sv"]  #
 
 all_languages = """
 SELECT ?l 
@@ -40,7 +41,7 @@ WHERE
 	FILTER("%s" != ?l1) .
 }
 GROUP BY ?l1 ORDER BY DESC(COUNT(DISTINCT(?item)))
-LIMIT 10
+#LIMIT 10
 """
 
 # (Two types of event classes)
@@ -73,40 +74,52 @@ GROUP BY ?eventType ORDER BY DESC(COUNT(?event))
 LIMIT 10
 """
 
+def save_json(new_data, file_name):
+
+	with open(file_name, "r+") as file:
+		file_data = json.load(file)
+		file_data.update(new_data)
+		file.seek(0)
+		json.dump(file_data, file, sort_keys=True, indent=4)
+
 def query_wikidata(wikidata_query):
 
 	sparql = "https://query.wikidata.org/sparql"  
-	r = requests.get(sparql, params = {'format': 'json', 'query': wikidata_query}).json()
+	r = requests.get(sparql, params = {'format': 'json', 'query': wikidata_query})
+	print(r, r.status_code)
+	# http errors have codes >= 400, 200 is good.
+	if r.status_code != 200: return pd.DataFrame()
+	r = r.json()
 	result = pd.io.json.json_normalize(r['results']['bindings'])
 	return result
 
-def normalize_values(event_dist_lang):
+def normalize_values(event_distribution):
 
-	total = sum(event_dist_lang.values())
-	print(total)
+	total = sum(event_distribution.values())
 
-	for key, value in event_dist_lang.items():
-		event_dist_lang[key] = value/total
-		print(key, value, total, event_dist_lang[key])
+	for key, value in event_distribution.items():
+		event_distribution[key] = value/total
 
-	return event_dist_lang
+	return event_distribution
 
 def get_language_pairs():
 	''' Get language links per query language for languages that have the same pages as query language.'''
-	language_pairs = defaultdict()
+	#language_links = defaultdict()
 
 	for lang in languages:
+		lang = lang.strip()
 		pairs = Counter()
 		print(10*" * ", lang)
 		result = query_wikidata(language_pairs_query % (lang, lang))
+		if result.empty == True: continue
 
 		l1s = result["l1.value"]
 		values = result["cnt.value"]
 
 		for l1, v in zip(l1s, values):
-			pairs[l1s] = int(v)
-			print(l1, '\t', v)
-		language_pairs[l] = pairs
+			pairs[l1] = int(v)
+		#language_links[lang] = pairs
+		save_json(pairs, "language_links.json")
 
 # def get_event_types():
 # 	''' Get counts of event types. 
@@ -122,30 +135,31 @@ def get_event_distributions():
 	event_dist_per_language = defaultdict()
 
 	for lang in languages:
-		event_dist_lang = Counter()
+		event_distribution = Counter()
+
+		lang = lang.strip()
 		print(10*" * ", lang)
 
-		event_classes = ["wd:Q1656682"]
-		for n, event_code in enumerate(event_classes): #, "wd:Q1190554"]:
+		# Just using one of the wds for "event":
+		result = query_wikidata(event_distribution_query % ("wd:Q1656682", lang))
+		
+		if result.empty == True or result is None: continue
+		event_types = result["eventType.value"]
+		values = result["cnt.value"]
 
-			event_dist = Counter()
-			result = query_wikidata(event_distribution_query % (event_code, lang))
-			if not result: continue
-			print(result)
-			event_types = result["eventType.value"]
-			values = result["cnt.value"]
+		for et, v in zip(event_types, values):
+			event_distribution[et.split("/")[-1]] = int(v)
 
-			for et,v in zip(event_types, values):
-				event_dist[et.split("/")[-1]] = int(v)
-
-			event_dist_lang += event_dist
-
-		if event_dist_lang:
-			normalized_distribution = normalize_values(event_dist_lang)
+		if event_distribution:
+			normalized_distribution = normalize_values(event_distribution)
 			print(normalized_distribution)
-			event_dist_per_language(normalized_distribution)
+			event_dist_per_language[lang] = normalized_distribution
 	
-	return event_dist_per_language
+			save_json(event_dist_per_language, "event_distributions.json")
+			del event_dist_per_language[lang]
+	#return event_dist_per_language
 
-get_event_distributions()
+if __name__ == "__main__":
+	#get_language_pairs()
+	get_event_distributions()
 
