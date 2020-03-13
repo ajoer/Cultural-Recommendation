@@ -1,0 +1,18 @@
+questions:
+
+1) for normalizing language-pair links:
+	now I've normalized by size of l1 version. But this favors small lvs.
+	How to normalize?
+
+2) I don't think we should focus on "missing" language links, because they will be hard to find and we are looking to recommend pages that are not already there. 
+
+3) events can have more than one type, e.g Hong Kong elections are both subtype "voting" and "meeting"
+
+for event in events:
+
+	if check_if_page_exists == True: continue
+
+	page_probability = calculate_page_probability(event_type, event_geo, LVs_with)
+
+	if page_probability > threshold:
+		recommend_page == True
