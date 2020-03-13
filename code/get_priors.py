@@ -1,26 +1,34 @@
 #!/usr/bin/python3
 """
+	Get prior probabilities for event type and language links.
 	Query Wikidata using SPARQL. 
 
-	1 the distance from the event to the center of query LV, e.g. capitol.
-    2 the prior similarity of other LVs with the given article to query LV (how many articles are both on the FR and DE pages, normalized by querying language)
-    3 the prior relevance of the type of event to query LV  (how many "sport events" are on DE Wiki, normalized)
-    4 (this is not for here. Wikipedia.) event related entities popularity in query language (e.g. length of entity page in query language) or number of mentions of entity on query language Wiki.)
+	1) Prior probability of event type P(Et): # events of type T / total # of events
+	2) Prior probability of lanugage link P(Ll): # ll to language L / total # of language links to all language	
 
-1: Stabile: query LV center
-2: Fully stabile: dict of counters, normalized(!) { de: { fr: 29, en: 12 }, fr: { de: 30, en: 89, da: 3 } }
-3: Fully stabile: dict of counters, normalized(!) { de: { sports: 2, election: 12, performance: 0 }, fr: { sport: 30, election: 89, performance: 3 } }
-4: Online.
+	Also need:
+		1 the distance from the event to the center of query LV, e.g. capitol.
+    	4 event related entities popularity in query language (e.g. length of entity page in query language) or number of mentions of entity on query language Wiki.)
 
 """
 import json
 import pandas as pd
 import requests
 import time
+import utils
 
 from collections import defaultdict, Counter
 
-languages = sorted(open("resources/wikipedia_LVs.txt").readlines()) #["da", "sv"] #"de", "fr", "da", "sv"]  #
+languages = ["da", "sv", "de", "fr", "is", "nb", "nl"] #sorted(open("resources/wikipedia_LVs.txt").readlines()) 
+# LV_stats = sorted(open("resources/wikipedia_LV_stats.tsv").readlines()[1:])
+# LV_sizes = {}
+# for line in LV_stats:
+# 	line = line.split("\t")
+# 	language = line[1].strip()
+
+# 	size = int(line[2].strip().replace(",",""))
+# 	if size > 30000:
+# 		LV_sizes[language] = size
 
 all_languages = """
 SELECT ?l 
@@ -71,46 +79,53 @@ WHERE
 
 }
 GROUP BY ?eventType ORDER BY DESC(COUNT(?event))
-LIMIT 10
 """
 
-def save_json(new_data, file_name):
 
-	with open(file_name, "r+") as file:
-		file_data = json.load(file)
-		file_data.update(new_data)
-		file.seek(0)
-		json.dump(file_data, file, sort_keys=True, indent=4)
+# def get_sum_lls(language_links):
+# 	sum_lls_per_lang = Counter()
+# 	for l in language_links:
+# 		for l1 in language_links[l]:
+# 			sum_lls_per_lang[l1] += language_links[l][l1]
+# 	return sum_lls_per_lang
 
-def query_wikidata(wikidata_query):
+# def normalize_by_lls(language_links, sum_lls_per_lang):
+# 	for l in language_links:
+# 		for l1 in language_links[l]:
+# 			if l1 not in sum_lls_per_lang: del language_links[l][l1]
+# 			normalized = language_links[l][l1]/sum_lls_per_lang[l1]
+# 			language_links[l][l1] = normalized
+# 	return language_links
 
-	sparql = "https://query.wikidata.org/sparql"  
-	r = requests.get(sparql, params = {'format': 'json', 'query': wikidata_query})
-	print(r, r.status_code)
-	# http errors have codes >= 400, 200 is good.
-	if r.status_code != 200: return pd.DataFrame()
-	r = r.json()
-	result = pd.io.json.json_normalize(r['results']['bindings'])
-	return result
+# def normalize_by_LVsize(pairs):
+# 	to_delete = []
+# 	for l1 in pairs:
+# 		if l1 in LV_sizes:
+# 			pairs[l1] = pairs[l1]/LV_sizes[l1]
+# 		else:
+# 			to_delete.append(l1)
+# 	for l in to_delete:
+# 		print(l)
+# 		del pairs[l]
+# 	return pairs
 
-def normalize_values(event_distribution):
+def normalize(counter):
+	total = sum(counter.values())
 
-	total = sum(event_distribution.values())
-
-	for key, value in event_distribution.items():
-		event_distribution[key] = value/total
-
-	return event_distribution
+	for key, value in counter.items():
+		counter[key] = value/total
+	return counter
 
 def get_language_pairs():
 	''' Get language links per query language for languages that have the same pages as query language.'''
-	#language_links = defaultdict()
 
-	for lang in languages:
+	language_links = {}
+
+	for n,lang in enumerate(languages):
 		lang = lang.strip()
 		pairs = Counter()
 		print(10*" * ", lang)
-		result = query_wikidata(language_pairs_query % (lang, lang))
+		result = utils.query_wikidata(language_pairs_query % (lang, lang))
 		if result.empty == True: continue
 
 		l1s = result["l1.value"]
@@ -118,32 +133,23 @@ def get_language_pairs():
 
 		for l1, v in zip(l1s, values):
 			pairs[l1] = int(v)
-		#language_links[lang] = pairs
-		save_json(pairs, "language_links.json")
 
-# def get_event_types():
-# 	''' Get counts of event types. 
-# 		Get distributions of event types per language version'''
-
-# 	result = query_wikidata(event_types_query)
-# 	items = result["item.value"]
-# 	itemlabels = result["itemLabel.value"]
-# 	values = result["cnt.value"]
-# 	print(result)
+		language_links[lang] = normalize(pairs)
+	utils.save2json(language_links, "resources/language_links.json")
 
 def get_event_distributions():
-	event_dist_per_language = defaultdict()
+	event_dist_per_language = {}
 
-	for lang in languages:
+	for lang in ["en"]: #languages:
 		event_distribution = Counter()
 
 		lang = lang.strip()
 		print(10*" * ", lang)
 
 		# Just using one of the wds for "event":
-		result = query_wikidata(event_distribution_query % ("wd:Q1656682", lang))
+		result = utils.query_wikidata(event_distribution_query % ("wd:Q1656682", lang))
 		
-		if result.empty == True or result is None: continue
+		if result.empty == True: continue
 		event_types = result["eventType.value"]
 		values = result["cnt.value"]
 
@@ -151,15 +157,12 @@ def get_event_distributions():
 			event_distribution[et.split("/")[-1]] = int(v)
 
 		if event_distribution:
-			normalized_distribution = normalize_values(event_distribution)
-			print(normalized_distribution)
+			normalized_distribution = normalize(event_distribution)
 			event_dist_per_language[lang] = normalized_distribution
-	
-			save_json(event_dist_per_language, "event_distributions.json")
-			del event_dist_per_language[lang]
-	#return event_dist_per_language
+
+	utils.save2json(event_dist_per_language, "resources/event_distributions_%s.json" % "en")
 
 if __name__ == "__main__":
-	#get_language_pairs()
-	get_event_distributions()
+	get_language_pairs()
+	#get_event_distributions()
 
