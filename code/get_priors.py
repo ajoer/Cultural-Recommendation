@@ -19,7 +19,7 @@ import utils
 
 from collections import defaultdict, Counter
 
-languages = ["da", "sv", "de", "fr", "is", "nb", "nl"] #sorted(open("resources/wikipedia_LVs.txt").readlines()) 
+languages = sorted(open("resources/wikipedia_LVs.txt").readlines()) 
 # LV_stats = sorted(open("resources/wikipedia_LV_stats.tsv").readlines()[1:])
 # LV_sizes = {}
 # for line in LV_stats:
@@ -113,15 +113,14 @@ def normalize(counter):
 	total = sum(counter.values())
 
 	for key, value in counter.items():
-		counter[key] = value/total
+		counter[key] = (value/total) * 100
 	return counter
 
 def get_language_pairs():
 	''' Get language links per query language for languages that have the same pages as query language.'''
 
-	language_links = {}
-
-	for n,lang in enumerate(languages):
+	for lang in languages:
+		language_links = {}
 		lang = lang.strip()
 		pairs = Counter()
 		print(10*" * ", lang)
@@ -135,12 +134,13 @@ def get_language_pairs():
 			pairs[l1] = int(v)
 
 		language_links[lang] = normalize(pairs)
-	utils.save2json(language_links, "resources/language_links.json")
+		utils.save2json(language_links, "resources/language_links_%s.json" % lang)
 
 def get_event_distributions():
-	event_dist_per_language = {}
 
-	for lang in ["en"]: #languages:
+	for lang in languages:
+
+		event_dist_per_language = {}
 		event_distribution = Counter()
 
 		lang = lang.strip()
@@ -160,7 +160,8 @@ def get_event_distributions():
 			normalized_distribution = normalize(event_distribution)
 			event_dist_per_language[lang] = normalized_distribution
 
-	utils.save2json(event_dist_per_language, "resources/event_distributions_%s.json" % "en")
+		utils.save2json(event_dist_per_language, "resources/event_distributions_%s.json" % lang)
+		event_dist_per_language = {}
 
 if __name__ == "__main__":
 	get_language_pairs()

@@ -3,7 +3,7 @@
 
 # ---------- RECOMMENDATION -----------
 # Get events per type and subtype:
-types_and_subtypes_of_EVENT_query = """ 
+events_query = """ 
 SELECT ?subtype ?subtypeLabel ?type ?typeLabel #(COUNT(?x) AS ?cnt)
 WHERE
 {
@@ -14,13 +14,14 @@ WHERE
 """
 
 # Get list of languages that have the event
-events_from_type_query = """
+languages_with_event_query = """
 SELECT DISTINCT ?lang 
 WHERE {
     ?sitelink schema:about wd:Q45578 .
 	?sitelink schema:inLanguage ?lang .
     ?sitelink schema:isPartOf [ wikibase:wikiGroup "wikipedia" ] .
-}"""
+}
+"""
 
 
 
