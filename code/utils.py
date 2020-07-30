@@ -23,9 +23,10 @@ def query_wikidata(wikidata_query):
 	r = requests.get(sparql, params = {'format': 'json', 'query': wikidata_query})
 
 	# http errors have codes >= 400, 200 is good.
-	if r.status_code != 200: return pd.DataFrame()
+	#if r.status_code != 200: return pd.DataFrame()
 	r = r.json()
-	result = pd.io.json.json_normalize(r['results']['bindings'])
+	result = pd.json_normalize(r['results']['bindings'])
+
 	return result
 
 if __name__ == "__main__":
